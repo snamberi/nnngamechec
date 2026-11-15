@@ -1,0 +1,148 @@
+{
+	"action_mapping": {
+		"block": "defend",
+		"cross": "dribble",
+		"fake": "shot (first four frames)",
+		"floater": "layup",
+		"jumper": "shot",
+		"reverse": "layup",
+		"screen": "defend (hold column 1)",
+		"spin": "dribble",
+		"stepback": "dribble",
+		"tomahawk": "dunk",
+		"two_hand": "dunk"
+	},
+	"alpha": "straight RGBA8, transparent background",
+	"animations": [
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.25,
+			"loop": true,
+			"name": "idle",
+			"row": 0,
+			"timing": "action-progress or elapsed-time driven"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.0714285714285714,
+			"loop": true,
+			"name": "run",
+			"row": 1,
+			"timing": "movement-driven when moving; duration is nominal"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.111111111111111,
+			"loop": true,
+			"name": "dribble",
+			"row": 2,
+			"timing": "movement-driven when moving; duration is nominal"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.09375,
+			"loop": false,
+			"name": "shot",
+			"row": 3,
+			"timing": "action-progress or elapsed-time driven"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.09375,
+			"loop": false,
+			"name": "layup",
+			"row": 4,
+			"timing": "action-progress or elapsed-time driven"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.09375,
+			"loop": false,
+			"name": "dunk",
+			"row": 5,
+			"timing": "action-progress or elapsed-time driven"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.04375,
+			"loop": false,
+			"name": "pass",
+			"row": 6,
+			"timing": "action-progress or elapsed-time driven"
+		},
+		{
+			"first_column": 0,
+			"frame_count": 8,
+			"frame_duration_seconds": 0.075,
+			"loop": false,
+			"name": "defend",
+			"row": 7,
+			"timing": "action-progress or elapsed-time driven"
+		}
+	],
+	"cell_size": [
+		80,
+		80
+	],
+	"columns": 8,
+	"files": [
+		{
+			"file": "player_01.png",
+			"player_index": 0,
+			"skin_variant": 0,
+			"team": "home"
+		},
+		{
+			"file": "player_02.png",
+			"player_index": 1,
+			"skin_variant": 1,
+			"team": "home"
+		},
+		{
+			"file": "player_03.png",
+			"player_index": 2,
+			"skin_variant": 2,
+			"team": "home"
+		},
+		{
+			"file": "player_04.png",
+			"player_index": 3,
+			"skin_variant": 0,
+			"team": "away"
+		},
+		{
+			"file": "player_05.png",
+			"player_index": 4,
+			"skin_variant": 1,
+			"team": "away"
+		},
+		{
+			"file": "player_06.png",
+			"player_index": 5,
+			"skin_variant": 2,
+			"team": "away"
+		}
+	],
+	"filter": "nearest",
+	"format_version": 1,
+	"generator": "res://tools/export_sheets.gd",
+	"pivot": [
+		40,
+		70
+	],
+	"pivot_origin": "top-left of each cell; pivot marks floor contact",
+	"rows": 8,
+	"runtime_notes": "Game uses the same cached frames derived from players.png. Charge holds the first four shot frames. Run cycles follow distance; stationary dribbling runs at 9 fps. Game code supplies horizontal facing flip and vertical jump offset.",
+	"sheet_size": [
+		640,
+		640
+	],
+	"source": "players.png"
+}

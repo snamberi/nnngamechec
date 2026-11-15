@@ -54,6 +54,7 @@ static func tick(g, dt: float) -> void:
 static func assign_defenders(g) -> void:
 	# Greedy nearest matchups; the closest defender takes the ball, then
 	# remaining defenders rotate to uncovered opponents instead of dogpiling.
+	var previous: Dictionary = g.assignments.duplicate()
 	g.assignments.clear()
 	var defenders: Array = []
 	var attackers: Array = []
@@ -65,7 +66,11 @@ static func assign_defenders(g) -> void:
 	if g.carrier >= 0:
 		var on_ball: int = defenders[0]
 		for i in defenders:
-			if g.players[i].pos.distance_to(g.ball) < g.players[on_ball].pos.distance_to(g.ball):
+			# Keep the current matchup unless a teammate is clearly closer.
+			# This avoids rapid switching when two defenders are side by side.
+			var distance: float = g.players[i].pos.distance_to(g.ball) - (10 if previous.get(i, -1) == g.carrier else 0)
+			var best_distance: float = g.players[on_ball].pos.distance_to(g.ball) - (10 if previous.get(on_ball, -1) == g.carrier else 0)
+			if distance < best_distance:
 				on_ball = i
 		g.assignments[on_ball] = g.carrier
 		defenders.erase(on_ball)
@@ -133,7 +138,7 @@ static func pass_lane_clear(g, passer: int, receiver: int) -> bool:
 	return true
 
 static func decide(g, dt: float) -> void:
-	if not g.flight.is_empty() or g.carrier < 0:
+	if not g.flight.is_empty() or g.carrier < 0 or g.clock_time <= 0:
 		return
 	# Pressure defenders can steal exposed dribbles, but successful moves
 	# protect the ball briefly. Cooldowns prevent per-frame lottery rolls.
@@ -143,6 +148,7 @@ static func decide(g, dt: float) -> void:
 			if p.steal_cd <= 0 and p.stun <= 0 and p.pos.distance_to(g.players[g.carrier].pos) < 21:
 				p.steal_cd = 1.7
 				if g.players[g.carrier].action == "idle" and g.rng.randf() < (0.26 if g.style == 1 else 0.12):
+					g.team_stats[1].steals += 1
 					g.gain_possession(j)
 					g.announce("STRIPPED • GET BACK!")
 					return

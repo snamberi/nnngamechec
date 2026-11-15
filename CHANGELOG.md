@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3 — Fieldhouse
+
+- Rename the game to Courtside Basketball and replace the neon theme with cream, navy, burgundy, and maple.
+- Add a generated64-frame player master sheet and six transparent animation sheets with layout metadata and a reproducible exporter.
+- Add sprite-frame run, dribble, shot, layup, dunk, pass, and defensive animations with foot alignment and left/right facing.
+- Redesign the gym, title screen, scoreboard, results screen, playbook, selection markers, and shadows.
+- Add shot-timing/contest feedback, a paused live box score (Tab), team statistics, and sound mute (M).
+- Replace beeps with synthesized bounce, pass, rim, swish, and whistle sounds.
+- Make rebounds favor the nearest eligible player, order interceptions by first contact, stabilize defensive matchups, and resolve exact body overlaps.
+- Reject invalid passes and passes after the buzzer; clear stale state and statistics on rematch.
+- Add asset and gameplay-polish regression tests; expand engine input tests for stats and sound controls.
+
 ## 0.2 — Handles + Team Play
 
 - Add crossover, spin, step-back, pump fake, move cooldowns, and stamina costs.

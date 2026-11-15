@@ -1,17 +1,20 @@
 extends Node2D
-## Original, asset-free 3v3 basketball. Court coordinates are gameplay coordinates.
+## Courtside Basketball. Court coordinates are gameplay coordinates.
 
-const INK = Color("0c1528")
-const WHITE = Color("f4e7cb")
-const TEAL = Color("56f4cf")
-const PINK = Color("ff6488")
-const GOLD = Color("ffc766")
+const INK = Color("25384b")
+const WHITE = Color("f5efdf")
+const TEAL = Color("557289")
+const PINK = Color("914e50")
+const GOLD = Color("c59d56")
 const COURT = Rect2(44, 91, 552, 218)
 const LEFT = Vector2(68, 200)
 const RIGHT = Vector2(572, 200)
 const QUARTER_SECONDS = 90.0
 const Tactics = preload("res://tactics.gd")
 const PixelArt = preload("res://pixel_art.gd")
+const Presentation = preload("res://presentation.gd")
+const SpriteAtlas = preload("res://sprite_atlas.gd")
+const CourtSound = preload("res://court_sound.gd")
 var font: Font = ThemeDB.fallback_font
 var players: Array[Dictionary] = []
 var controlled = 0
@@ -42,8 +45,16 @@ var assignments: Dictionary = {}
 var transition_time = 0.0
 var style = 0
 var help_visible = false
+var stats_visible = false
 var crowd_energy = 0.0
 var last_finish = ""
+var muted = false
+var bounce_time = 0.0
+var bounce_audio: AudioStreamPlayer
+var shot_feedback: Dictionary = {}
+var rebound_team = -1
+var team_stats: Array[Dictionary] = []
+var last_pass: Dictionary = {}
 var match_stats = {"ai_passes": 0, "screens": 0, "interceptions": 0}
 const STYLES = ["BALANCED", "PRESSURE", "PERIMETER"]
 
@@ -51,6 +62,9 @@ func _ready() -> void:
 	rng.randomize()
 	audio = AudioStreamPlayer.new()
 	add_child(audio)
+	bounce_audio = AudioStreamPlayer.new()
+	add_child(bounce_audio)
+	reset_stats()
 	reset_positions(0)
 
 func reset_positions(team: int) -> void:
@@ -74,6 +88,8 @@ func reset_positions(team: int) -> void:
 	cuts.clear()
 	assignments.clear()
 	transition_time = 0
+	rebound_team = -1
+	last_pass.clear()
 
 func start_game() -> void:
 	scores = [0, 0]
@@ -82,6 +98,15 @@ func start_game() -> void:
 	mode = "play"
 	paused = false
 	help_visible = false
+	stats_visible = false
+	cooldown = 0.0
+	pickup_delay = 0.0
+	elapsed = 0.0
+	crowd_energy = 0.0
+	last_finish = ""
+	bounce_time = 0.0
+	shot_feedback.clear()
+	reset_stats()
 	players.clear()
 	particles.clear()
 	match_stats = {"ai_passes": 0, "screens": 0, "interceptions": 0}
@@ -92,6 +117,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or event.echo:
 		return
 	var key = event.physical_keycode
+	if event.pressed and key == KEY_M:
+		muted = not muted
+		audio.stop()
+		bounce_audio.stop()
+		return
 	if event.pressed and key == KEY_T and mode != "play":
 		style = (style + 1) % STYLES.size()
 		return
@@ -104,10 +134,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.pressed and key == KEY_ESCAPE:
 		paused = not paused
 		help_visible = false
+		stats_visible = false
 		charge = -1.0
 	if event.pressed and key == KEY_H:
+		stats_visible = false
 		help_visible = not help_visible
 		paused = help_visible
+		charge = -1.0
+	if event.pressed and key == KEY_TAB:
+		help_visible = false
+		stats_visible = not stats_visible
+		paused = stats_visible
 		charge = -1.0
 	if paused:
 		return
@@ -156,9 +193,20 @@ func tick(dt: float) -> void:
 	if mode != "play" or paused:
 		return
 	elapsed += dt
+	bounce_time -= dt
+	if carrier >= 0 and charge < 0 and players[carrier].action != "fake" and bounce_time <= 0:
+		bounce_time = 0.46
+		if not muted:
+			CourtSound.play(bounce_audio, "bounce")
 	crowd_energy = maxf(0, crowd_energy - dt * 0.45)
 	transition_time = maxf(0, transition_time - dt)
 	message_time = maxf(0, message_time - dt)
+	if not shot_feedback.is_empty():
+		shot_feedback.time -= dt
+		if shot_feedback.time <= 0:
+			shot_feedback.clear()
+	if not last_pass.is_empty():
+		last_pass.time += dt
 	cooldown = maxf(0, cooldown - dt)
 	pickup_delay = maxf(0, pickup_delay - dt)
 	clock_time = maxf(0, clock_time - dt)
@@ -202,7 +250,9 @@ func tick(dt: float) -> void:
 	for i in range(6):
 		for j in range(i + 1, 6):
 			var offset: Vector2 = players[i].pos - players[j].pos
-			if offset.length() < 13 and offset.length() > 0.01:
+			if offset.length() <= 0.01:
+				offset = Vector2.RIGHT.rotated(float(i + j) * 1.1) * 0.1
+			if offset.length() < 13:
 				var push = offset.normalized() * (13 - offset.length()) * 0.5
 				move_player(i, push)
 				move_player(j, -push)
@@ -213,20 +263,7 @@ func tick(dt: float) -> void:
 		if players[carrier].action == "fake" or charge >= 0:
 			ball = players[carrier].pos + Vector2(7, -29)
 	elif loose and pickup_delay <= 0:
-		for i in range(6):
-			if players[i].pos.distance_to(ball) < 17:
-				var old_possession = possession
-				carrier = i
-				possession = players[i].team
-				play_call.clear()
-				cuts.clear()
-				transition_time = 3.5 if old_possession != possession else 0.0
-				shot_clock = 14.0 if old_possession == possession else 24.0
-				loose = false
-				if possession == 0:
-					controlled = i
-				announce("REBOUND")
-				break
+		collect_rebound()
 	Tactics.decide(self, dt)
 	for p in particles:
 		p.pos += p.vel * dt
@@ -342,6 +379,9 @@ func shoot(i: int, timing: float) -> void:
 	if perfect and pressure < 0.35 and distance < 245:
 		probability = 1.0
 	var dunk = finish in ["two_hand", "tomahawk"]
+	team_stats[team].fga += 1
+	if distance > 160:
+		team_stats[team].three_attempts += 1
 	if dunk:
 		probability = 0.96 - pressure * 0.2
 		players[i].stamina = maxf(0, players[i].stamina - 0.24)
@@ -351,7 +391,10 @@ func shoot(i: int, timing: float) -> void:
 	players[i].action = finish
 	players[i].action_time = 0.75
 	last_finish = finish
+	if team == 0:
+		shot_feedback = {"timing": timing, "contest": pressure, "time": 2.4, "quality": "EXCELLENT" if perfect else ("GOOD" if timing > 0.65 else "OFF TIMING"), "finish": finish}
 	flight = {"kind": "shot", "start": Vector2(players[i].pos) - Vector2(0, 26), "target": hoop, "t": 0.0, "duration": 0.48 if dunk else 0.85, "team": team, "points": 3 if distance > 160 else 2, "made": rng.randf() < probability, "green": perfect, "finish": finish, "shooter": i}
+	flight["assisted"] = not last_pass.is_empty() and last_pass.receiver == i and last_pass.time < 4.0
 	carrier = -1
 	charge = -1.0
 	if team == 0:
@@ -375,7 +418,7 @@ func pass_ball(give_go: bool = false) -> void:
 	begin_pass(best, give_go)
 
 func begin_pass(receiver: int, give_go: bool = false) -> void:
-	if carrier < 0 or receiver == carrier or players[receiver].team != possession:
+	if carrier < 0 or receiver < 0 or receiver >= players.size() or receiver == carrier or players[receiver].team != possession or not flight.is_empty() or clock_time <= 0:
 		return
 	var passer = carrier
 	var hoop = RIGHT if possession == 0 else LEFT
@@ -399,52 +442,73 @@ func update_flight(dt: float) -> void:
 		flight.target = players[flight.receiver].pos
 	ball = Vector2(flight.start).lerp(flight.target, t)
 	if flight.kind == "pass":
+		var interceptor = -1
+		var first_contact = INF
 		for j in range(6):
 			if players[j].team == flight.team or players[j].stun > 0:
 				continue
 			var closest = Geometry2D.get_closest_point_to_segment(players[j].pos, previous_ball, ball)
 			if players[j].pos.distance_to(closest) < 10 and Vector2(flight.start).distance_to(players[j].pos) > 16:
-				gain_possession(j)
-				match_stats.interceptions += 1
-				announce("PASS INTERCEPTED!")
-				return
+				var along: float = previous_ball.distance_to(closest)
+				if along < first_contact:
+					first_contact = along
+					interceptor = j
+		if interceptor >= 0:
+			team_stats[players[interceptor].team].steals += 1
+			gain_possession(interceptor)
+			match_stats.interceptions += 1
+			announce("PASS INTERCEPTED!")
+			return
 	if t < 1:
 		return
 	var done = flight.duplicate()
 	flight.clear()
 	if done.kind == "pass":
 		carrier = done.receiver
+		last_pass = {"receiver": carrier, "passer": done.passer, "time": 0.0}
 		if possession == 0:
 			controlled = carrier
 		return
 	if done.made:
 		scores[done.team] += done.points
+		team_stats[done.team].fgm += 1
+		if done.points == 3:
+			team_stats[done.team].three_made += 1
+		if done.get("assisted", false):
+			team_stats[done.team].assists += 1
 		crowd_energy = 1.0
 		burst(done.target, TEAL if done.team == 0 else PINK)
 		tone(880, 0.12)
 		reset_positions(1 - int(done.team))
-		announce(("NIGHT OWLS" if done.team == 0 else "SUNSET CLUB") + "  +%d" % done.points)
+		announce(("HARBOR" if done.team == 0 else "SUMMIT") + "  +%d" % done.points)
 	else:
 		ball = Vector2(done.target) + Vector2(rng.randf_range(20, 65) * (-1 if done.team == 0 else 1), rng.randf_range(-45, 45))
 		shot_clock = maxf(14.0, shot_clock)
 		loose = true
+		rebound_team = int(done.team)
 		pickup_delay = 0.25
 		announce("OFF THE RIM • GET THE BOARD", 1.2)
 		tone(140, 0.08)
 
 func defend() -> void:
+	if possession == 0 and not loose:
+		return
 	cooldown = 0.9
 	players[controlled].jump = 1.0
 	players[controlled].action = "block"
 	players[controlled].action_time = 0.6
 	if carrier >= 3 and players[controlled].pos.distance_to(players[carrier].pos) < 30:
 		if rng.randf() < 0.62:
+			team_stats[0].steals += 1
 			gain_possession(controlled)
 			announce("PICKPOCKET!")
 		else:
 			announce("REACH MISSED", 0.7)
 	elif not flight.is_empty() and flight.kind == "shot" and flight.team == 1 and flight.t < 0.38 and players[controlled].pos.distance_to(flight.start) < 40:
+		if not flight.get("blocked", false):
+			team_stats[0].blocks += 1
 		flight.made = false
+		flight["blocked"] = true
 		announce("BLOCKED!")
 		tone(110, 0.1)
 
@@ -462,6 +526,34 @@ func gain_possession(i: int) -> void:
 	cuts.clear()
 	transition_time = 3.5
 	ball = players[i].pos
+	rebound_team = -1
+	last_pass.clear()
+
+func collect_rebound() -> void:
+	# The closest eligible player earns a loose ball, regardless of team or
+	# roster order. A jumping player has a slightly larger collection reach.
+	var winner = -1
+	var nearest = INF
+	for i in range(6):
+		var distance: float = players[i].pos.distance_to(ball)
+		var reach = 20.0 if players[i].jump > 0.1 else 17.0
+		if distance < reach and distance < nearest:
+			nearest = distance
+			winner = i
+	if winner < 0:
+		return
+	var old_possession = possession
+	team_stats[players[winner].team].rebounds += 1
+	gain_possession(winner)
+	shot_clock = 14.0 if old_possession == possession else 24.0
+	transition_time = 3.5 if old_possession != possession else 0.0
+	announce("OFFENSIVE REBOUND" if old_possession == possession else "DEFENSIVE REBOUND")
+
+func reset_stats() -> void:
+	team_stats.clear()
+	for team in range(2):
+		team_stats.append({"fgm": 0, "fga": 0, "three_made": 0, "three_attempts": 0, "rebounds": 0, "steals": 0, "blocks": 0, "assists": 0})
+	last_pass.clear()
 
 func announce(text: String, duration: float = 1.8) -> void:
 	message = text
@@ -471,22 +563,19 @@ func burst(pos: Vector2, color: Color) -> void:
 	for i in range(20):
 		particles.append({"pos": pos, "vel": Vector2(rng.randf_range(-60, 60), rng.randf_range(-70, 25)), "life": rng.randf_range(0.4, 1.0), "color": color})
 
-func tone(hz: float, duration: float) -> void:
-	if DisplayServer.get_name() == "headless":
+func tone(hz: float, _duration: float) -> void:
+	if muted:
 		return
-	var sound = AudioStreamWAV.new()
-	sound.format = AudioStreamWAV.FORMAT_8_BITS
-	sound.mix_rate = 22050
-	var data = PackedByteArray()
-	var count = int(duration * 22050)
-	data.resize(count)
-	for i in range(count):
-		var sample = sin(TAU * hz * i / 22050.0) * 23 * (1.0 - float(i) / count)
-		data[i] = int(sample) & 255
-	sound.data = data
-	audio.stream = sound
-	audio.play()
-
+	var kind = "release"
+	if hz == 880:
+		kind = "swish"
+	elif hz == 270:
+		kind = "pass"
+	elif hz <= 150:
+		kind = "rim"
+	elif hz == 220:
+		kind = "whistle"
+	CourtSound.play(audio, kind)
 func label(text: String, pos: Vector2, size: int = 12, color: Color = WHITE) -> void:
 	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
 
@@ -502,77 +591,29 @@ func _draw() -> void:
 		draw_player(i)
 	draw_ball()
 	for p in particles:
-		draw_rect(Rect2(p.pos, Vector2(3, 3)), p.color)
+		draw_rect(Rect2(p.pos, Vector2(2, 2)), p.color)
 	draw_hud()
 	if mode == "title":
-		draw_rect(Rect2(0, 0, 640, 360), Color(0.025, 0.04, 0.08, 0.88))
-		label("NC / 02", Vector2(38, 41), 14, TEAL)
-		label("AFTER HOURS BASKETBALL", Vector2(38, 67), 10, GOLD)
-		label("NEON", Vector2(35, 133), 64, WHITE)
-		label("COURT", Vector2(35, 191), 64, TEAL)
-		label("3 ON 3.  ALL HEART.", Vector2(40, 218), 14, WHITE)
-		draw_rect(Rect2(40, 243, 228, 36), TEAL)
-		label("ENTER  /  HIT THE COURT", Vector2(54, 267), 14, INK)
-		label("WASD MOVE  /  SHIFT SPRINT", Vector2(344, 110), 11)
-		label("SPACE  Hold shot / tap fake", Vector2(344, 134), 11)
-		label("Z CROSS   X SPIN   C STEP BACK", Vector2(344, 158), 11, TEAL)
-		label("V FAKE   E PASS   Q DEFEND", Vector2(344, 182), 11)
-		label("R SCREEN   F GIVE & GO", Vector2(344, 206), 11, TEAL)
-		label("H  Full controls during play", Vector2(344, 235), 10)
-		label("T  OPPONENT: " + STYLES[style], Vector2(344, 268), 11, GOLD)
-		label("CHANGE THE PACE. CREATE SPACE.", Vector2(40, 310), 11, TEAL)
-		label("HANDLES + TEAM PLAY UPDATE  /  FOUR 90-SECOND QUARTERS", Vector2(40, 330), 9, Color("7c8ca4"))
+		Presentation.title(self)
 	elif paused or mode == "final":
-		draw_rect(Rect2(0, 0, 640, 360), Color(0.02, 0.03, 0.07, 0.86))
-		centered("PAUSED" if paused else ("OWLS WIN" if scores[0] > scores[1] else "SUNSET WINS"), 160, 38, TEAL)
-		centered("ESC  /  BACK TO THE COURT" if paused else "%d  —  %d     |     ENTER TO REMATCH" % [scores[0], scores[1]], 204, 14)
+		Presentation.overlay(self)
 	if help_visible:
 		draw_help()
+	if stats_visible:
+		Presentation.box_score(self)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if mode == "title":
+			if Rect2(28, 258, 257, 38).has_point(get_global_mouse_position()):
+				start_game()
+			elif Rect2(25, 302, 260, 30).has_point(get_global_mouse_position()):
+				style = (style + 1) % STYLES.size()
 func draw_arena() -> void:
-	draw_rect(Rect2(0, 0, 640, 360), INK)
-	PixelArt.spectators(self)
-	draw_rect(Rect2(38, 85, 564, 230), TEAL)
-	draw_rect(Rect2(41, 88, 558, 224), INK)
-	draw_rect(COURT, Color("b47c53"))
-	for x in range(44, 596, 23):
-		draw_rect(Rect2(x, 91, 22, 218), Color("c18a5c") if x % 2 == 0 else Color("b98155"))
-		for y in range(91, 309, 36):
-			var seam_y = y + (18 if x % 2 else 0)
-			if seam_y < 309:
-				draw_line(Vector2(x, seam_y), Vector2(x + 22, seam_y), Color("ad764f"))
-	draw_rect(Rect2(44, 151, 100, 98), Color("244d55"))
-	draw_rect(Rect2(496, 151, 100, 98), Color("5d394d"))
-	draw_rect(Rect2(44, 151, 100, 98), WHITE, false, 1)
-	draw_rect(Rect2(496, 151, 100, 98), WHITE, false, 1)
-	draw_line(Vector2(320, 91), Vector2(320, 309), WHITE)
-	draw_arc(Vector2(320, 200), 40, 0, TAU, 64, WHITE)
-	draw_circle(Vector2(320, 200), 29, Color("a66d4c"))
-	# Original owl crest at center court.
-	draw_colored_polygon(PackedVector2Array([Vector2(298, 183), Vector2(310, 189), Vector2(330, 189), Vector2(342, 183), Vector2(337, 211), Vector2(320, 222), Vector2(303, 211)]), Color("294b50"))
-	draw_circle(Vector2(311, 201), 8, WHITE)
-	draw_circle(Vector2(329, 201), 8, WHITE)
-	draw_circle(Vector2(312, 201), 4, INK)
-	draw_circle(Vector2(328, 201), 4, INK)
-	draw_colored_polygon(PackedVector2Array([Vector2(316, 208), Vector2(324, 208), Vector2(320, 214)]), GOLD)
-	var arc_angle = asin(109.0 / 160.0)
-	draw_arc(Vector2(68, 200), 160, -arc_angle, arc_angle, 48, WHITE)
-	draw_arc(Vector2(572, 200), 160, PI - arc_angle, PI + arc_angle, 48, WHITE)
-	draw_arc(Vector2(144, 200), 34, -PI / 2, PI / 2, 32, WHITE)
-	draw_arc(Vector2(496, 200), 34, PI / 2, PI * 1.5, 32, WHITE)
-	for hoop in [LEFT, RIGHT]:
-		var back = -10 if hoop == LEFT else 10
-		draw_line(hoop + Vector2(back, -20), hoop + Vector2(back, 20), INK, 5)
-		draw_line(hoop + Vector2(back, -18), hoop + Vector2(back, 18), WHITE, 3)
-		draw_circle(hoop, 8, INK)
-		draw_arc(hoop, 6, 0, TAU, 16, Color("ff894c"), 2)
-		for dy in range(-3, 5, 3):
-			draw_line(hoop + Vector2(-4, dy), hoop + Vector2(4, dy), WHITE, 1)
-	label("NIGHT OWLS  >>>", Vector2(65, 328), 10, TEAL)
-	label("<<<  SUNSET CLUB", Vector2(471, 328), 10, PINK)
+	Presentation.arena(self)
 
 func draw_player(i: int) -> void:
-	PixelArt.player(self, i)
+	SpriteAtlas.player(self, i)
 
 func draw_ball() -> void:
 	var height = 0.0
@@ -597,38 +638,7 @@ func draw_ball() -> void:
 		draw_rect(Rect2(origin + Vector2(charge / 1.4 * 42, -2), Vector2(2, 9)), WHITE)
 
 func draw_hud() -> void:
-	draw_rect(Rect2(0, 0, 640, 55), Color("111e33"))
-	label("NEON / COURT", Vector2(16, 22), 12, TEAL)
-	label("V0.2 / " + STYLES[style], Vector2(16, 41), 9, Color("7c8ca4"))
-	label("OWLS", Vector2(190, 20), 10, TEAL)
-	label("%02d" % scores[0], Vector2(190, 44), 25)
-	label("SUNSET", Vector2(391, 20), 10, PINK)
-	label("%02d" % scores[1], Vector2(395, 44), 25)
-	centered("%d:%02d" % [int(ceil(clock_time)) / 60, int(ceil(clock_time)) % 60], 29, 22)
-	centered("Q%d  /  SHOT %02d" % [quarter, int(ceil(maxf(0, shot_clock)))], 45, 10, GOLD)
-	label("HOME  /  YOU", Vector2(534, 23), 10, TEAL)
-	label("ESC  PAUSE", Vector2(534, 41), 9, Color("7c8ca4"))
-	if message_time > 0:
-		draw_rect(Rect2(165, 60, 310, 19), INK)
-		centered(message, 73, 10, GOLD)
-	centered("Z CROSS  X SPIN  C STEPBACK  V FAKE  R SCREEN  F GIVE&GO   /   H CONTROLS", 350, 9, Color("9daac0"))
+	Presentation.hud(self)
 
 func draw_help() -> void:
-	draw_rect(Rect2(28, 30, 584, 302), INK)
-	draw_rect(Rect2(28, 30, 584, 302), TEAL, false, 1)
-	label("THE PLAYBOOK", Vector2(48, 62), 24, TEAL)
-	label("WASD / ARROWS   Move", Vector2(48, 92), 12)
-	label("SHIFT   Sprint / dunk near rim", Vector2(48, 115), 12)
-	label("SPACE   Hold & release in green", Vector2(48, 138), 12)
-	label("Tap SPACE / V   Pump fake", Vector2(48, 161), 12)
-	label("E   Pass toward input / switch", Vector2(48, 184), 12)
-	label("Q   Steal / block", Vector2(48, 207), 12)
-	label("Z Cross   X Spin   C Step back", Vector2(334, 92), 12, TEAL)
-	label("R   Call pick-and-roll", Vector2(334, 115), 12)
-	label("F   Pass, then cut to basket", Vector2(334, 138), 12)
-	label("Near rim: away + shot = reverse", Vector2(334, 161), 11)
-	label("Sprint + side input = tomahawk", Vector2(334, 184), 11)
-	label("Sprint + forward = two-hand dunk", Vector2(334, 207), 11)
-	label("Moves cost stamina. Stop before a jumper for better accuracy.", Vector2(48, 251), 11, GOLD)
-	label("Protect the ball. Pass around defenders. Use the screen, then feed the roll.", Vector2(48, 275), 10)
-	centered("H / ESC  •  RETURN TO GAME", 311, 12, TEAL)
+	Presentation.help(self)

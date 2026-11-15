@@ -1,12 +1,12 @@
-# Neon Court — v0.2
+# Courtside Basketball — v0.3
 
-Original pixel-style 3-on-3 basketball for **Godot 4.3+**. The Handles + Team Play update adds dribble moves, directional finishes, coordinated team AI, and procedural pixel-player animation. Tested with Godot 4.7.2 on Windows.
+Original pixel-style 3-on-3 basketball for **Godot 4.3+**. The Fieldhouse update replaces the neon theme with a traditional gym, natural team colors, sprite-sheet animation, a broadcast-style interface, and fairer possession play. Tested with Godot 4.7.2 on Windows.
 
 ## Play
 
 Clone this repository (or run `git pull origin main` in your existing clone), import `project.godot` into Godot, and press **F5**. Press **Enter** to start. On the title screen, press **T** to choose a Balanced, Pressure, or Perimeter opponent.
 
-The teal Night Owls attack right. The pink Sunset Club attacks left. Four 90-second quarters; 24-second possessions; two/three-point scoring; rebounds; 45-second overtime until the tie is broken. Teams keep their baskets throughout the match.
+The cream-and-navy Harbor home team attacks right. The burgundy Summit away team attacks left. Four 90-second quarters; 24-second possessions; two/three-point scoring; rebounds; 45-second overtime until the tie is broken. Teams keep their baskets throughout the match.
 
 ## Controls
 
@@ -42,9 +42,23 @@ Inside 49 court units, a normal shot becomes a layup. Hold a direction **away fr
 - **Defense:** nearest defenders take the ball, others rotate onto uncovered players, and weak-side help collapses on drives. Bad passes can be intercepted.
 - **Opponent styles:** Balanced drives, passes, and screens; Pressure attempts steals more aggressively and closes tighter; Perimeter seeks outside shots and swings the ball.
 
-### Visual update
+### Fieldhouse visual and animation update
 
-Larger pixel players have different hairstyles and skin tones, jersey trim, socks, shoes, wristbands, directional faces, and articulated arms and legs. Separate poses cover dribbling, spins, screening, passes, pump fakes, shots, blocks, layups, and two dunk styles. Movement trails, jump shadows, an original owl court crest, reserves on benches, a sideline official, and celebrating spectators round out the arena. All art is drawn from code; no external asset or plugin downloads are required.
+- Warm maple flooring, painted navy/burgundy keys, traditional court lines, glass backboards, bleachers, and benches.
+- Cream/navy home uniforms and burgundy away uniforms, natural skin colors, neutral contact shadows, and discreet selection markers.
+- A generated 64-frame player master sheet: idle, run, dribble, shot, layup, dunk, pass, and defense animations. Left/right facing, gameplay-timed frame progression, and jump height are handled by Godot.
+- Six exported **transparent 640×640 animation sheets** in `assets/player_01.png` through `player_06.png`. Each has 8 rows × 8 frames; frame size 80×80, foot pivot (40,70). Layout/timing are documented in `assets/animations.json`.
+- Full-resolution character previews on a new title screen; clickable Play and opponent-style selection.
+- Readable scoreboard, release/contest feedback, live team statistics, final results, and an in-game playbook.
+- Ball bounce, pass, rim, swish, and whistle sounds synthesized separately from the gameplay RNG.
+
+Press **Tab** for the box score (pauses play), **H** for controls, and **M** to mute/unmute. Match stats track field goals, threes, rebounds, assists, steals, and blocks. Rematches reset stats and stale state. Rebounds go to the closest eligible player, pass interceptions honor first contact, and defenders retain stable matchups.
+
+Sprite art was created with the built-in ImageGen tool and imported through a chroma-key cleanup pipeline. See [asset documentation](assets/README.md) and [art provenance / prompts](assets/ART_PROVENANCE.md). Regenerate the reusable sheets after changing the master:
+
+```sh
+godot --headless --path . --script res://tools/export_sheets.gd
+```
 
 ## Tests
 
@@ -54,6 +68,8 @@ Run from the project directory (replace `godot` with your executable if needed):
 godot --headless --path . --script res://tests/match_test.gd
 godot --headless --path . --script res://tests/upgrades_test.gd
 godot --headless --path . --script res://tests/input_test.gd
+godot --headless --path . --script res://tests/polish_test.gd
+godot --headless --path . --script res://tests/atlas_test.gd
 ```
 
 Match tests cover scoring, rebounds, possession, quarters, overtime, and a five-minute simulation. Upgrade checks cover controls, stamina, move cooldowns, finishes, screens/rolls, cuts, interceptions, defensive assignments, pause, and 100-second simulations for each opponent style. Input checks exercise Godot's real key handling and fixed-step movement.
@@ -62,7 +78,10 @@ Match tests cover scoring, rebounds, possession, quarters, overtime, and a five-
 
 - `game.gd`: match state, fixed-step movement, controls, scoring, HUD, sound.
 - `tactics.gd`: screens, cuts, matchups, help defense, pass decisions, AI styles.
-- `pixel_art.gd`: procedural player animation and arena characters.
+- `sprite_atlas.gd`: frame loading, uniform palettes, animation selection, sprite rendering.
+- `presentation.gd`: gym, menus, scoreboard, playbook, and box score.
+- `court_sound.gd`: court sound synthesis.
+- `pixel_art.gd`: floor markers for called plays.
 - `main.tscn`: entry scene.
 - `tests/`: regression and engine-input checks.
 
