@@ -14,6 +14,7 @@ func run() -> void:
 	var game = load("res://main.tscn").instantiate()
 	root.add_child(game)
 	game.set_process(false)
+	game.set_physics_process(false)
 	game.start_game()
 	game.rng.seed = 42
 	check(game.players.size() == 6 and game.possession == 0, "3v3 tipoff")
